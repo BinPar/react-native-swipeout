@@ -106,7 +106,7 @@ export default class Swipeout extends Component {
 
 		this.state = {
 			autoClose: props.autoClose || false,
-			btnWidth: 0,
+			btnDefaultWidth: 0,
 			btnsLeftWidth: 0,
 			btnsRightWidth: 0,
 			contentHeight: 0,
@@ -310,11 +310,19 @@ export default class Swipeout extends Component {
 
 	_onLayout(event) {
 		let {width, height} = event.nativeEvent.layout;
-		let btnWidth = (width / 5);
-		let btnsLeftWidth = this.props.left ? btnWidth * this.props.left.length : 0;
-		let btnsRightWidth = this.props.right ? btnWidth * this.props.right.length : 0;
+		let btnDefaultWidth = width / 5.0;
+		let btnsLeftWidth = this.props.left ? (
+				this.props.left.reduce((res, btn) => {
+					return res + (btn.width || btnDefaultWidth);
+				}, 0)
+			) : 0;
+		let btnsRightWidth = this.props.right ? (
+				this.props.right.reduce((res, btn) => {
+					return res + (btn.width || btnDefaultWidth);
+				}, 0)
+			) : 0;
 		this.setState({
-			btnWidth,
+			btnDefaultWidth,
 			btnsLeftWidth,
 			btnsRightWidth,
 			endPosLeft: btnsLeftWidth,
@@ -337,7 +345,7 @@ export default class Swipeout extends Component {
 				text={btn.text}
 				type={btn.type}
 				underlayColor={btn.underlayColor}
-				width={this.state.btnWidth}/>
+				width={btn.width || this.state.btnDefaultWidth}/>
 		);
 	}
 
