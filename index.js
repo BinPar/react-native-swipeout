@@ -3,6 +3,10 @@ import styles from "./styles";
 import React, {Component, PropTypes} from "react";
 import {PanResponder, TouchableHighlight, StyleSheet, Text, View, Animated, Easing} from "react-native";
 
+const ATT_SEEK_TIMING = 150;
+const ATT_SEEK_FRICTION = 2;
+const ATT_SEEK_TENSION = 100;
+
 export const NativeButton = NativeButtonImport;
 export class SwipeoutButton extends Component {
 
@@ -13,7 +17,9 @@ export class SwipeoutButton extends Component {
 		onPress: PropTypes.func,
 		text: PropTypes.string,
 		type: PropTypes.string,
-		underlayColor: PropTypes.string
+		underlayColor: PropTypes.string,
+		tension: PropTypes.number,
+		friction: PropTypes.number
 	};
 
 	static defaultProps = {
@@ -92,7 +98,8 @@ export default class Swipeout extends Component {
 		right: PropTypes.array,
 		scroll: PropTypes.func,
 		style: View.propTypes.style,
-		sensitivity: PropTypes.number
+		sensitivity: PropTypes.number,
+		initialAttentionSeeker: PropTypes.bool
 	};
 
 	static defaultProps = {
@@ -114,13 +121,13 @@ export default class Swipeout extends Component {
 			openedRight: false,
 			swiping: false,
 			tweenDuration: 160,
-			timeStart: null
+			timeStart: null,
+			_contentLeft: new Animated.Value(0)
 		};
 
 		this._posX = 0;
 		this._contentPosLeft = new Animated.Value(0);
 		this._contentPosRight = new Animated.Value(0);
-		this._contentLeft = new Animated.Value(0);
 
 		this._onLayout = this._onLayout.bind(this);
 		this._handlePanResponderGrant = this._handlePanResponderGrant.bind(this);
@@ -188,13 +195,15 @@ export default class Swipeout extends Component {
 			if (posX < 0 && this.props.right) {
 				posX = Math.min(posX, 0);
 				this._posX = posX;
-				this._contentLeft.setValue(this._rubberBandEasing(posX, limit));
+				this.state._contentLeft.setValue(this._rubberBandEasing(posX, limit));
+				this.setState({ _contentLeft: this.state._contentLeft });
 				this._contentPosRight.setValue(Math.abs(this.state.contentWidth + Math.max(limit, posX)));
 			} else if (posX > 0 && this.props.left) {
 				limit = leftWidth
 				posX = Math.max(posX, 0);
 				this._posX = posX;
-				this._contentLeft.setValue(this._rubberBandEasing(posX, limit));
+				this.state._contentLeft.setValue(this._rubberBandEasing(posX, limit));
+				this.setState({ _contentLeft: this.state._contentLeft });
 				this._contentPosLeft.setValue(Math.min(posX, limit));
 			}
 		}
@@ -271,7 +280,7 @@ export default class Swipeout extends Component {
 				duration: contentPosEnd === 0 ? this.state.tweenDuration * 1.5 : this.state.tweenDuration,
 				toValue: contentPosEnd
 			}),
-			Animated.timing(this._contentLeft, {
+			Animated.timing(this.state._contentLeft, {
 				easing: Easing.inOut(Easing.quad),
 				duration: contentPosEnd === 0 ? this.state.tweenDuration * 1.5 : this.state.tweenDuration,
 				toValue: contentLeftEnd
@@ -308,28 +317,105 @@ export default class Swipeout extends Component {
 		});
 	}
 
+	attentionSeeker(params) {
+		const { contentWidth, endPosLeft, endPosRight} = params;
+		if(this.props.right) {
+			this._contentPosRight.setValue(contentWidth);
+			this.state._contentLeft.setValue(-1);
+			this.setState({ _contentLeft: this.state._contentLeft });
+			const anim1 = Animated.parallel([
+				Animated.timing(this.state._contentLeft, {
+					toValue: -30,
+					duration: ATT_SEEK_TIMING
+				}),
+				Animated.timing(this._contentPosRight, {
+					toValue: contentWidth - 30,
+					duration: ATT_SEEK_TIMING
+				})
+			]);
+			const anim2 = Animated.parallel([
+				Animated.spring(this.state._contentLeft, {
+					toValue: 0,
+					friction: ATT_SEEK_FRICTION,
+					tension: ATT_SEEK_TENSION
+				}),
+				Animated.spring(this._contentPosRight, {
+					toValue: contentWidth,
+					friction: ATT_SEEK_FRICTION,
+					tension: ATT_SEEK_TENSION
+				})
+			]);
+			this._runningAttentionSeeker = Animated.sequence([
+				anim1,
+				anim2
+			]).start();
+		} else if(this.props.left) {
+			this.state._contentLeft.setValue(1);
+			this.setState({ _contentLeft: this.state._contentLeft });
+			const anim1 = Animated.parallel([
+				Animated.timing(this.state._contentLeft, {
+					toValue: 30,
+					duration: ATT_SEEK_TIMING
+				}),
+				Animated.timing(this._contentPosRight, {
+					toValue: 30,
+					duration: ATT_SEEK_TIMING
+				})
+			]);
+			const anim2 = Animated.parallel([
+				Animated.spring(this.state._contentLeft, {
+					toValue: 0,
+					friction: ATT_SEEK_FRICTION,
+					tension: ATT_SEEK_TENSION
+				}),
+				Animated.spring(this._contentPosRight, {
+					toValue: 0,
+					friction: ATT_SEEK_FRICTION,
+					tension: ATT_SEEK_TENSION
+				})
+			]);
+			this._runningAttentionSeeker = Animated.sequence([
+				anim1,
+				anim2
+			]).start();
+		}
+	}
+
 	_onLayout(event) {
-		let {width, height} = event.nativeEvent.layout;
-		let btnDefaultWidth = width / 5.0;
-		let btnsLeftWidth = this.props.left ? (
-				this.props.left.reduce((res, btn) => {
-					return res + (btn.width || btnDefaultWidth);
-				}, 0)
-			) : 0;
-		let btnsRightWidth = this.props.right ? (
-				this.props.right.reduce((res, btn) => {
-					return res + (btn.width || btnDefaultWidth);
-				}, 0)
-			) : 0;
-		this.setState({
-			btnDefaultWidth,
-			btnsLeftWidth,
-			btnsRightWidth,
-			endPosLeft: btnsLeftWidth,
-			endPosRight: Math.abs(width - btnsRightWidth),
-			contentWidth: width,
-			contentHeight: height,
-		});
+		if(!this._initialized) {
+			this._initialized = true;
+			const {width, height} = event.nativeEvent.layout;
+			let btnDefaultWidth = width / 5.0;
+			let btnsLeftWidth = this.props.left ? (
+					this.props.left.reduce((res, btn) => {
+						return res + (btn.width || btnDefaultWidth);
+					}, 0)
+				) : 0;
+			let btnsRightWidth = this.props.right ? (
+					this.props.right.reduce((res, btn) => {
+						return res + (btn.width || btnDefaultWidth);
+					}, 0)
+				) : 0;
+			const endPosRight = Math.abs(width - btnsRightWidth);
+			this.setState({
+				btnDefaultWidth,
+				btnsLeftWidth,
+				btnsRightWidth,
+				endPosLeft: btnsLeftWidth,
+				endPosRight,
+				contentWidth: width,
+				contentHeight: height,
+			}, () => {
+				if(this.props.initialAttentionSeeker && !this._attentionSought) {
+					this._attentionSought = true;
+					this.attentionSeeker({
+						endPosLeft: btnsLeftWidth,
+						endPosRight,
+						contentWidth: width
+					});
+				}
+			});
+		}
 	}
 
 	_renderButton(btn, i) {
@@ -386,7 +472,7 @@ export default class Swipeout extends Component {
 		};
 		let styleContentPos = {
 			content: {
-				left: this._contentLeft,
+				left: this.state._contentLeft,
 			},
 		};
 
@@ -399,9 +485,8 @@ export default class Swipeout extends Component {
 		let styleLeft = [styles.swipeoutBtns];
 		styleLeft.push(styleLeftPos.left);
 
-		let isRightVisible = this._contentLeft._value < 0;
-		let isLeftVisible = this._contentLeft._value > 0;
-
+		let isRightVisible = this.state._contentLeft._value < 0;
+		let isLeftVisible = this.state._contentLeft._value > 0;
 		return (
 			<View style={styleSwipeout}>
 				<Animated.View
