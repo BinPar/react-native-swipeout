@@ -5,7 +5,7 @@ iOS-style swipeout buttons that appear from behind a component
 
 ## Installation
 ```
-npm install --save react-native-swipeout
+npm install --save @binpar/react-native-swipeout
 ```
 
 ## Usage example

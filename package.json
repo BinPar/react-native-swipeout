@@ -1,5 +1,5 @@
 {
-  "name": "react-native-swipeout",
+  "name": "@binpar/react-native-swipeout",
   "version": "2.0.14",
   "description": "iOS-style swipeout buttons behind component",
   "main": "index.js",
